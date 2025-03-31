@@ -9,6 +9,8 @@ Key features:
 - **Pluggable:** Limiter is an interface, so any algorithm can be used.
 - **Minimal dependencies:** Only dependency is `golang.org/x/time/rate`
 
+![test status](https://github.com/iamcalledrob/throughput/actions/workflows/test.yml/badge.svg)
+
 ## Usage
 
 [Godoc](http://pkg.go.dev/github.com/iamcalledrob/throughput)
