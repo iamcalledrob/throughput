@@ -8,7 +8,6 @@ import (
 	"github.com/dustin/go-humanize"
 	"golang.org/x/time/rate"
 	"io"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -68,7 +67,7 @@ func testRead(t *testing.T, duration time.Duration, readSize int, bytesPerSecLim
 
 // Read a fixed amount of data, measure how long it took and compare
 // By taking limiter and expectedBytesPerSec, it's possible to test multiple readers of a shared limiter.
-func testReadWithLimiter(t *testing.T, lim *rate.Limiter, expectedDuration time.Duration, readSize int, expectedBytesPerSec int) {
+func testReadWithLimiter(t *testing.T, lim Limiter, expectedDuration time.Duration, readSize int, expectedBytesPerSec int) {
 	count := int64((expectedDuration.Seconds() + 0.0) * float64(expectedBytesPerSec))
 	r := NewReader(context.Background(), &nopReader{}, lim)
 
@@ -135,19 +134,6 @@ func testWrite(t *testing.T, expectedDuration time.Duration, writeSize int, byte
 	}
 }
 
-type enableableLimiter struct {
-	*rate.Limiter
-	enabled atomic.Bool
-}
-
-func (e *enableableLimiter) SetEnabled(value bool) {
-	e.enabled.Store(value)
-}
-
-func (e *enableableLimiter) Enabled() bool {
-	return e.enabled.Load()
-}
-
 func benchmarkRead(b *testing.B, lim Limiter) {
 	r := NewReader(context.Background(), &nopReader{}, lim)
 
@@ -157,24 +143,26 @@ func benchmarkRead(b *testing.B, lim Limiter) {
 	}
 }
 
-func BenchmarkFastPath(b *testing.B) {
-	b.Run("WithoutFastPath", func(b *testing.B) {
-		benchmarkRead(b, rate.NewLimiter(rate.Inf, 0))
-	})
-	b.Run("WithFastPath", func(b *testing.B) {
-		lim := &enableableLimiter{Limiter: rate.NewLimiter(rate.Inf, 0)}
-		lim.SetEnabled(false)
+func BenchmarkDisableableLimiter(b *testing.B) {
+	b.Run("WithoutDisableableLimiter", func(b *testing.B) {
+		lim := NewRateLimiterAdapter(rate.NewLimiter(rate.Inf, 0))
 		benchmarkRead(b, lim)
+	})
+	b.Run("WithDisableableLimiter", func(b *testing.B) {
+		lim := NewRateLimiterAdapter(rate.NewLimiter(rate.Inf, 0))
+		lim2 := NewDisableableLimiter(lim)
+		lim2.SetEnabled(false)
+		benchmarkRead(b, lim2)
 	})
 }
 
 // Depleted limiter removes initial burst capacity, which is easier to reason about for tests.
 // This is because the # of bytes allowed would equal the limit * secs, rather than being off-by-one
 // due to the initial burst.
-func depletedLimiter(limit int) *rate.Limiter {
+func depletedLimiter(limit int) *RateLimiterAdapter {
 	lim := NewBytesPerSecLimiter(int64(limit))
 	lim.AllowN(time.Now(), limit)
-	return lim
+	return NewRateLimiterAdapter(lim)
 }
 
 func verifyWithSlop(actual time.Duration, expected time.Duration, slop time.Duration) error {
